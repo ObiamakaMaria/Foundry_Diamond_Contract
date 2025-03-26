@@ -1,9 +1,9 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.0;
+
 import "forge-std/Test.sol";
-import "solidity-stringutils/strings.sol";
 
 abstract contract DiamondUtils is Test {
-    using strings for *;
-
     function generateSelectors(
         string memory _facetName
     ) internal returns (bytes4[] memory selectors) {
@@ -16,28 +16,54 @@ abstract contract DiamondUtils is Test {
         bytes memory res = vm.ffi(cmd);
         string memory st = string(res);
 
-        // extract function signatures and take first 4 bytes of keccak
-        strings.slice memory s = st.toSlice();
-
-        // Skip TRACE lines if any
-        strings.slice memory nl = "\n".toSlice();
-        strings.slice memory trace = "TRACE".toSlice();
-        while (s.contains(trace)) {
-            s.split(nl);
+        // Count the number of selectors by counting colons
+        uint256 selectorCount = 0;
+        bytes memory stBytes = bytes(st);
+        for (uint256 i = 0; i < stBytes.length; i++) {
+            if (stBytes[i] == ":") {
+                selectorCount++;
+            }
         }
 
-        strings.slice memory colon = ":".toSlice();
-        strings.slice memory comma = ",".toSlice();
-        strings.slice memory dbquote = '"'.toSlice();
-        selectors = new bytes4[]((s.count(colon)));
+        selectors = new bytes4[](selectorCount);
+        uint256 currentIndex = 0;
 
-        for (uint i = 0; i < selectors.length; i++) {
-            s.split(dbquote); // advance to next doublequote
-            // split at colon, extract string up to next doublequote for methodname
-            strings.slice memory method = s.split(colon).until(dbquote);
-            selectors[i] = bytes4(method.keccak());
-            strings.slice memory selectr = s.split(comma).until(dbquote); // advance s to the next comma
+        // Parse the string to extract function signatures
+        bytes memory stBytes2 = bytes(st);
+        uint256 start = 0;
+        uint256 end = 0;
+        bool inQuotes = false;
+
+        for (uint256 i = 0; i < stBytes2.length; i++) {
+            if (stBytes2[i] == '"') {
+                inQuotes = !inQuotes;
+                if (!inQuotes) {
+                    end = i;
+                    if (start > 0) {
+                        string memory method = substring(st, start + 1, end);
+                        if (bytes(method).length > 0) {
+                            selectors[currentIndex++] = bytes4(keccak256(bytes(method)));
+                        }
+                    }
+                } else {
+                    start = i;
+                }
+            }
         }
+
         return selectors;
+    }
+
+    function substring(
+        string memory str,
+        uint256 startIndex,
+        uint256 endIndex
+    ) internal pure returns (string memory) {
+        bytes memory strBytes = bytes(str);
+        bytes memory result = new bytes(endIndex - startIndex);
+        for (uint256 i = startIndex; i < endIndex; i++) {
+            result[i - startIndex] = strBytes[i];
+        }
+        return string(result);
     }
 }
